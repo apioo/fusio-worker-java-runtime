@@ -1,7 +1,8 @@
 package org.fusioproject.worker.runtime;
 
-import groovy.lang.Binding;
 import groovy.lang.GroovyShell;
+import groovy.lang.MissingMethodException;
+import groovy.lang.Script;
 import org.fusioproject.worker.runtime.exception.FileNotFoundException;
 import org.fusioproject.worker.runtime.exception.InvalidActionException;
 import org.fusioproject.worker.runtime.exception.RuntimeException;
@@ -28,29 +29,37 @@ public class Runtime {
         Logger logger = new Logger();
         ResponseBuilder responseBuilder = new ResponseBuilder();
 
-        Binding binding = new Binding();
-        binding.setProperty("request", execute.getRequest());
-        binding.setProperty("context", execute.getContext());
-        binding.setProperty("connector", connector);
-        binding.setProperty("response", responseBuilder);
-        binding.setProperty("dispatcher", dispatcher);
-        binding.setProperty("logger", logger);
+        Object[] arguments = {
+            execute.getRequest(),
+            execute.getContext(),
+            connector,
+            responseBuilder,
+            dispatcher,
+            logger,
+        };
 
         if (!actionFile.exists()) {
             throw new FileNotFoundException("Provided action files does not exist");
         }
 
+        ResponseHTTP response;
+
         try {
-            GroovyShell shell = new GroovyShell(binding);
-            shell.evaluate(actionFile);
+            GroovyShell shell = new GroovyShell();
+            Script script = shell.parse(actionFile);
+
+            Object result = script.invokeMethod("handle", arguments);
+
+            if (result instanceof ResponseHTTP) {
+                response = (ResponseHTTP) result;
+            } else {
+                response = new ResponseHTTP();
+                response.setStatusCode(204);
+            }
+        } catch (MissingMethodException e) {
+            throw new InvalidActionException("Script does not contain a handle method", e);
         } catch (IOException e) {
             throw new InvalidActionException("Could not execute action", e);
-        }
-
-        ResponseHTTP response = responseBuilder.getResponse();
-        if (response == null) {
-            response = new ResponseHTTP();
-            response.setStatusCode(204);
         }
 
         Response result = new Response();
