@@ -5,16 +5,11 @@ import org.fusioproject.worker.runtime.generated.ResponseHTTP;
 import java.util.Map;
 
 public class ResponseBuilder {
-    private ResponseHTTP response;
-
-    public void build(int statusCode, Map<String, String> headers, Object body) {
-        this.response = new ResponseHTTP();
-        this.response.setStatusCode(statusCode);
-        this.response.setHeaders(headers);
-        this.response.setBody(body);
-    }
-
-    public ResponseHTTP getResponse() {
-        return this.response;
+    public ResponseHTTP build(int statusCode, Map<String, String> headers, Object body) {
+        ResponseHTTP response = new ResponseHTTP();
+        response.setStatusCode(statusCode);
+        response.setHeaders(headers);
+        response.setBody(body);
+        return response;
     }
 }
