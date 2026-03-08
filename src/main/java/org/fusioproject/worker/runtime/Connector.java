@@ -1,27 +1,21 @@
 package org.fusioproject.worker.runtime;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.json.jackson.JacksonJsonpMapper;
-import co.elastic.clients.transport.ElasticsearchTransport;
-import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoDatabase;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
-import org.apache.http.Header;
-import org.apache.http.HttpHost;
-import org.apache.http.message.BasicHeader;
-import org.elasticsearch.client.RestClient;
 import org.fusioproject.worker.runtime.exception.ConnectionException;
 import org.fusioproject.worker.runtime.exception.ConnectionNotFoundException;
 import org.fusioproject.worker.runtime.exception.InvalidConnectionTypeException;
 import org.fusioproject.worker.runtime.exception.RuntimeException;
 import org.fusioproject.worker.runtime.generated.ExecuteConnection;
+import redis.clients.jedis.RedisClient;
 
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.FileSystems;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Base64;
@@ -65,7 +59,7 @@ public class Connector {
 
             return con;
         } else if (connection.getType().equals("Fusio.Adapter.Sql.Connection.SqlAdvanced")) {
-            java.sql.Connection con = this.newSqlConnection(config.get("url"));
+            var con = this.newSqlConnection(config.get("url"));
 
             this.instances.put(name, con);
 
@@ -86,14 +80,30 @@ public class Connector {
 
             return client;
         } else if (connection.getType().equals("Fusio.Adapter.Mongodb.Connection.MongoDB")) {
-            MongoClient client = MongoClients.create(config.get("url"));
-            MongoDatabase database = client.getDatabase(config.get("database"));
+            var client = MongoClients.create(config.get("url"));
+            var database = client.getDatabase(config.get("database"));
 
             this.instances.put(name, database);
 
             return database;
         } else if (connection.getType().equals("Fusio.Adapter.Elasticsearch.Connection.Elasticsearch")) {
-            ElasticsearchClient client = this.newElasticsearchClient(config.get("host"), config.get("password"));
+            var client = ElasticsearchClient.of(builder -> builder
+                .host(config.get("host"))
+                .apiKey(config.get("password"))
+            );
+
+            this.instances.put(name, client);
+
+            return client;
+        } else if (connection.getType().equals("Fusio.Adapter.File.Connection.Filesystem")) {
+            var filesystem = FileSystems.getFileSystem(URI.create(config.get("config")));
+
+            this.instances.put(name, filesystem);
+
+            return filesystem;
+        } else if (connection.getType().equals("Fusio.Adapter.Redis.Connection.Redis")) {
+            int port = Integer.parseInt(config.get("port"));
+            var client = RedisClient.builder().hostAndPort(config.get("host"), port).build();
 
             this.instances.put(name, client);
 
@@ -109,19 +119,6 @@ public class Connector {
         } catch (SQLException e) {
             throw new ConnectionException("Could not obtain connection", e);
         }
-    }
-
-    private ElasticsearchClient newElasticsearchClient(String host, String apiKey) {
-        RestClient restClient = RestClient
-            .builder(HttpHost.create(host))
-            .setDefaultHeaders(new Header[]{
-                new BasicHeader("Authorization", "ApiKey " + apiKey)
-            })
-            .build();
-
-        ElasticsearchTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
-
-        return new ElasticsearchClient(transport);
     }
 
     private HashMap<String, String> parseConfig(String rawConfig) throws ConnectionException {
